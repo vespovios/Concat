@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+
+name: Build app (manual)
+
+# Builds the installers for every desktop target from any branch, on
+# demand, without cutting a release: release.yml is the only other caller
+# of build-app.yml, and it wants a version tag, a green CI run and a
+# release to publish into. This is for trying a branch on a real machine
+# before it is anything more than a branch. Download the bundle for your
+# machine from the run's artifacts (Concat-macos-arm64 and so on).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-app.yml
+    secrets: inherit
