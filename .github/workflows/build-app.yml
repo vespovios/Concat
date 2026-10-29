@@ -542,9 +542,9 @@ jobs:
       - name: Build
         # Both Mac runners are slow ones. The Intel build ran past sixty
         # minutes in v0.2.7-rc.1; the Apple silicon one has caught it up -
-        # 32 minutes for 0.2.5 on a cold cache, 63 for 0.2.8 on another, and
-        # one killed at sixty on a runner GitHub flagged as short of
-        # capacity.
+        # 32 minutes for 0.2.5 on a cold cache, 63 for `main` just after
+        # 0.2.8 on another, and one killed at sixty on a runner GitHub
+        # flagged as short of capacity.
         timeout-minutes: ${{ matrix.platform == 'macos' && 100 || 60 }}
         shell: bash
         working-directory: src
