@@ -315,6 +315,11 @@ export component App inherits Window {
     in property <int> app-menu-token;
     callback menu-opened(index: int);
     callback app-menu-selected(id: string);
+    /// Open, Close and Quit from their keys rather than the menu: the same
+    /// actions as `app-menu-selected`, held first to the rule every other
+    /// chord keeps - nothing from inside a text field, nothing to the
+    /// editor under a sheet, nothing while a Shortcuts row is listening.
+    callback window-chord(id: string);
 
     callback titlebar-begin-drag();
     callback titlebar-toggle-maximize();
@@ -601,7 +606,7 @@ export component App inherits Window {
         // projects, and it is a window.
         KeyBinding {
             keys: @keys(Control + O);
-            activated => { root.app-menu-selected("open"); }
+            activated => { root.window-chord("open"); }
         }
         // ⌘W closes the window on a Mac. Elsewhere Ctrl+W closes the
         // document - the project - and Ctrl+Q quits; Windows' Alt+F4 is
@@ -610,14 +615,14 @@ export component App inherits Window {
             keys: @keys(Control + W);
             enabled: root.macos || !root.on-start;
             activated => {
-                root.app-menu-selected(root.macos ? "close-window" : "close-project");
+                root.window-chord(root.macos ? "close-window" : "close-project");
             }
         }
 
         KeyBinding {
             keys: @keys(Control + Q);
             enabled: !root.macos;
-            activated => { root.app-menu-selected("close-window"); }
+            activated => { root.window-chord("close-window"); }
         }
         // Everything the keymap owns lands here only when nothing else
         // took it - a field being typed into consumes its own letters and

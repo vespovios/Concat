@@ -2282,6 +2282,34 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         state.open_menu = index;
         state.menu_bar_token += 1;
     }));
+    // The window's own chords - Ctrl+O, Ctrl+W and Ctrl+Q - are
+    // KeyBindings in app.slint, matched before `key-chord` runs, so none of
+    // its guards ever saw them: Ctrl+W typed into a title closed the
+    // project, Ctrl+O opened a folder picker over Export, and either one
+    // pressed while a Shortcuts row was listening did the thing instead of
+    // being turned away as reserved. They come here first and keep the
+    // keymap's rule. Quit alone goes past a sheet: it is the window's, and
+    // closing saves or asks, so a sheet in front of the editor is no
+    // reason to refuse it.
+    app.on_window_chord(|action| {
+        Shell::with(|shell, app| {
+            let (capturing, sheet) = {
+                let state = shell.studio.borrow();
+                (state.settings.capturing.is_some(), state.sheet_open())
+            };
+            match window_chord(action.as_str(), capturing, typing(&app), sheet) {
+                WindowChord::Run => app.invoke_app_menu_selected(action),
+                WindowChord::Reserved => {
+                    // What `key-chord` says to a reserved chord, which it
+                    // never got to say for these: the row keeps listening.
+                    let mut state = shell.studio.borrow_mut();
+                    state.notify(&i18n::t("shortcuts.reserved"), true);
+                    state.publish(&app, &shell.models);
+                }
+                WindowChord::Ignored => {}
+            }
+        });
+    });
     app.on_app_menu_selected({
         move |action| {
             log::info!("menu: {action}");
@@ -2655,6 +2683,32 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
 /// through its own window internals: the keystroke that reaches the keymap
 /// carries no target, and a flag each field kept would stay set when a
 /// sheet closed with its field still focused.
+/// What one of the window's chords does - Open, Close or Quit from its
+/// key - given what holds the keyboard when it is pressed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WindowChord {
+    /// Do it, as the menu row would.
+    Run,
+    /// A Shortcuts row is listening: tell it this chord is the window's.
+    Reserved,
+    /// Not for the editor: a field is being typed into, or a sheet is in
+    /// front of the editor the action would reach.
+    Ignored,
+}
+
+/// The rule `key-chord` keeps for every other chord, for the three that
+/// are bindings and never reach it. `action` is the menu action the key
+/// stands for: "open", "close-project" or "close-window".
+fn window_chord(action: &str, capturing: bool, typing: bool, sheet: bool) -> WindowChord {
+    if capturing {
+        WindowChord::Reserved
+    } else if typing || (sheet && action != "close-window") {
+        WindowChord::Ignored
+    } else {
+        WindowChord::Run
+    }
+}
+
 fn typing(app: &App) -> bool {
     use slint::private_unstable_api::re_exports::{TextInput, WindowInner};
     WindowInner::from_pub(app.window())
@@ -2839,7 +2893,7 @@ fn leave(code: i32) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::close_window;
+    use super::{WindowChord, close_window, window_chord};
     use std::cell::{Cell, RefCell};
     use std::path::Path;
 
@@ -3021,6 +3075,63 @@ mod tests {
         assert_eq!(late, Ok(projects::Saved::Superseded));
         let reopened = Session::open_info(&info).expect("reopens the latest snapshot");
         assert_eq!(tracks(&reopened), edited, "the last edit survives close");
+    }
+
+    /// Ctrl+O, Ctrl+W and Ctrl+Q do nothing from inside a field: a title
+    /// being typed is not a request to close the project it is in.
+    #[test]
+    fn the_window_chords_are_ignored_while_typing() {
+        for action in ["open", "close-project", "close-window"] {
+            assert_eq!(
+                window_chord(action, false, true, false),
+                WindowChord::Ignored,
+                "{action}"
+            );
+        }
+    }
+
+    /// Under a sheet, Open and Close would act on the editor nobody can
+    /// see; Quit is the window's and goes, since closing saves or asks.
+    #[test]
+    fn only_quit_goes_past_a_sheet() {
+        assert_eq!(
+            window_chord("open", false, false, true),
+            WindowChord::Ignored
+        );
+        assert_eq!(
+            window_chord("close-project", false, false, true),
+            WindowChord::Ignored
+        );
+        assert_eq!(
+            window_chord("close-window", false, false, true),
+            WindowChord::Run
+        );
+    }
+
+    /// A Shortcuts row listening is told the chord is reserved, as
+    /// `key-chord` would tell it - even though Settings is a sheet and the
+    /// capture field may hold the focus.
+    #[test]
+    fn a_listening_shortcut_row_hears_the_window_chords_are_reserved() {
+        for action in ["open", "close-project", "close-window"] {
+            assert_eq!(
+                window_chord(action, true, true, true),
+                WindowChord::Reserved,
+                "{action}"
+            );
+        }
+    }
+
+    /// With nothing in the way, each one does what its menu row does.
+    #[test]
+    fn the_window_chords_run_from_the_editor() {
+        for action in ["open", "close-project", "close-window"] {
+            assert_eq!(
+                window_chord(action, false, false, false),
+                WindowChord::Run,
+                "{action}"
+            );
+        }
     }
 
     /// The version switch schedules its relaunch inside the leave, so a
